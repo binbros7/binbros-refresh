@@ -1,0 +1,55 @@
+name: Bin Bros Dashboard Refresh
+
+# Cron times are in UTC. SAST is UTC+2.
+# 06:00 SAST = 04:00 UTC | 20:00 SAST = 18:00 UTC
+on:
+  schedule:
+    - cron: '0 4,18 * * *'
+  # Also allow manual fire from the Actions tab:
+  workflow_dispatch:
+
+# Cancel in-flight runs if a new one starts (avoid overlap)
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run refresh
+        env:
+          BINBROS_EMAIL:       ${{ secrets.BINBROS_EMAIL }}
+          BINBROS_PASSWORD:    ${{ secrets.BINBROS_PASSWORD }}
+          DASHBOARD_PASSWORD:  ${{ secrets.DASHBOARD_PASSWORD }}
+          NETLIFY_TOKEN:       ${{ secrets.NETLIFY_TOKEN }}
+          # Optional — leave blank to skip AddPay reconciliation:
+          ADDPAY_EMAIL:        ${{ secrets.ADDPAY_EMAIL }}
+          ADDPAY_PASSWORD:     ${{ secrets.ADDPAY_PASSWORD }}
+        run: node scripts/refresh.mjs
+
+      - name: Upload run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: refresh-summary-${{ github.run_id }}
+          path: |
+            run-summary.json
+            run-error.log
+          if-no-files-found: ignore
