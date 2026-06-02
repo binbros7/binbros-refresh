@@ -56,14 +56,27 @@ async function fetchRefreshJs() {
 
 async function loginBinBros(page) {
   log('Navigating to Bin Bros login');
-  await page.goto(BB + '/admin/authentication', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  // Retry up to 3 times: Bin Bros is in ZA, GitHub runners are US/EU, the round trip can spike.
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.goto(BB + '/admin/authentication', { waitUntil: 'domcontentloaded', timeout: 90000 });
+      lastErr = null;
+      break;
+    } catch (e) {
+      lastErr = e;
+      log(`login goto attempt ${attempt} failed: ${e.message}`);
+      if (attempt < 3) await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+  if (lastErr) throw lastErr;
   await page.fill('input[name="email"]', env.BINBROS_EMAIL);
   await page.fill('input[name="password"]', env.BINBROS_PASSWORD);
   // The "remember me" checkbox keeps the session sticky for longer
   const rem = page.locator('input[name="remember"]');
   if (await rem.count() > 0) await rem.check().catch(() => {});
   await Promise.all([
-    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }),
+    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 90000 }),
     page.click('button[type="submit"], input[type="submit"]'),
   ]);
   // After login we should be on /admin/clients (or similar). If still on /authentication, creds are wrong.
@@ -75,13 +88,13 @@ async function loginBinBros(page) {
 }
 
 async function navAndWaitForTable(page, path) {
-  await page.goto(BB + path, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.goto(BB + path, { waitUntil: 'domcontentloaded', timeout: 90000 });
   // Wait until at least one row appears in any DataTable on the page
   await page.waitForFunction(() => {
     if (typeof window.jQuery === 'undefined') return false;
     const t = window.jQuery('.dataTable');
     return t.length > 0 && t.find('tbody tr').length > 0;
-  }, null, { timeout: 30000 });
+  }, null, { timeout: 90000 });
 }
 
 async function injectRefreshJs(page, refreshJsContent) {
@@ -101,7 +114,7 @@ async function scrapeAddPay(ctx, refreshJs) {
   log('Opening AddPay tab');
   const page = await ctx.newPage();
   try {
-    await page.goto('https://admin.addpay.cloud/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto('https://admin.addpay.cloud/', { waitUntil: 'domcontentloaded', timeout: 90000 });
     // AddPay's login form is SPA-rendered with no `name` attributes; find the visible
     // password input first, then locate its sibling email/text field within the same form.
     await page.waitForSelector('input[type="password"]', { timeout: 25000 });
@@ -136,10 +149,10 @@ async function scrapeAddPay(ctx, refreshJs) {
       return { ok: true };
     }, { email: env.ADDPAY_EMAIL, password: env.ADDPAY_PASSWORD });
     if (!filled.ok) throw new Error('AddPay login fill failed: ' + filled.reason);
-    await page.waitForURL(/\/manage/, { timeout: 30000 });
+    await page.waitForURL(/\/manage/, { timeout: 90000 });
     log(`AddPay login OK (landed on ${page.url()})`);
-    await page.goto('https://admin.addpay.cloud/manage/transactions', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForSelector('table tbody tr', { timeout: 30000 });
+    await page.goto('https://admin.addpay.cloud/manage/transactions', { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForSelector('table tbody tr', { timeout: 90000 });
     await page.waitForTimeout(2000); // let the SPA render fully
     await injectRefreshJs(page, refreshJs);
     const result = await page.evaluate(async () => await window.binbrosRefresh());
@@ -184,8 +197,8 @@ async function main() {
       return arr[0]?.id;
     });
     if (!firstId) throw new Error('no client IDs in sessionStorage after scrapeClients');
-    await page.goto(`${BB}/admin/clients/client/${firstId}?group=contacts`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForFunction(() => typeof window.jQuery !== 'undefined' && window.jQuery('table.dataTable').length > 0, null, { timeout: 30000 });
+    await page.goto(`${BB}/admin/clients/client/${firstId}?group=contacts`, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.waitForFunction(() => typeof window.jQuery !== 'undefined' && window.jQuery('table.dataTable').length > 0, null, { timeout: 90000 });
     await injectRefreshJs(page, refreshJs);
     summary.profiles = await runStage(page, refreshJs);
     log(`Profiles: ${JSON.stringify(summary.profiles)}`);
@@ -246,7 +259,7 @@ async function main() {
     addpayTxns: summary.addpayTxns,
     mdb: summary.deploy?.mdb,
     odb: summary.deploy?.odb,
-    toatls: summary.deploy?.totals,
+    totals: summary.deploy?.totals,
   }, null, 2));
 }
 
