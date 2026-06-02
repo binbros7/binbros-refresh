@@ -1,0 +1,16 @@
+{
+  "name": "binbros-refresh",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Twice-daily refresh for the Bin Bros dashboards. Runs in GitHub Actions on a cron, drives a headless Chromium via Playwright.",
+  "scripts": {
+    "refresh": "node scripts/refresh.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "^1.45.0"
+  }
+}
