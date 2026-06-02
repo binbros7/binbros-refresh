@@ -1,0 +1,7 @@
+node_modules/
+run-summary.json
+run-error.log
+*.log
+.DS_Store
+playwright-report/
+test-results/
